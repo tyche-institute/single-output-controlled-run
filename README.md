@@ -56,11 +56,56 @@ script that verifies every file. The article asks what a green verification job 
 | `.slsa-goreleaser/` | The six build configurations, with three values changed. |
 | `cmd/sample/`, `go.mod` | The toy program. |
 | `LICENSE`, `NOTICE` | Licence and origin of the copied files. |
+| `results/` | The two result files, added after the runs (see Results). |
 
 ## Results
 
-The results are added to this file after the runs. The records of every run (jobs, logs, releases and provenance
-files) are kept in the article's replication package, because GitHub keeps logs for a limited time.
+The tool check, both release runs and both audits were made on 23 November 2026, in the order of the protocol: two
+tags, no repeated run and no re-run of a job.
+
+| | Run A, tag `v0.1.0`, nothing planted | Run B, tag `v0.2.0`, one binary replaced |
+|:--|:--|:--|
+| Release run | [45236660430](https://github.com/tyche-institute/single-output-controlled-run/actions/runs/45236660430): success | [45237708522](https://github.com/tyche-institute/single-output-controlled-run/actions/runs/45237708522): success |
+| Last leg to complete | darwin-amd64, 4 seconds after the leg before it | windows-amd64, 19 seconds after the leg before it |
+| Value that the verification job received | `sample-darwin-amd64` | `sample-windows-amd64.exe` |
+| Binaries that the verification job checked | that one | that one |
+| Planted | nothing | `sample-windows-arm64.exe`, the binary of the first leg to complete, replaced by the marker before the verification job started; the job `plant` completed 4 seconds before it |
+| Audit of all six binaries | [45237496257](https://github.com/tyche-institute/single-output-controlled-run/actions/runs/45237496257): success, six passes | [45238563069](https://github.com/tyche-institute/single-output-controlled-run/actions/runs/45238563069): failure, five passes and one failure, for `sample-windows-arm64.exe` |
+
+- **P1, the output rule: held in both runs.** The value named the last leg to complete, a different leg in each run.
+- **P2, the check: held in both runs, in the reading of deviation D1 below.** The verification job verified the one
+  binary that the value names.
+- **P3, fail-open: held in run B.** The run ended in success although the release held the marker in place of one
+  binary before the verification job started. The audit failed for exactly that file.
+- **Control: held.** The audit of run A's release passed for all six binaries.
+
+**What the two runs do not tell apart.** In both runs the leg that completed last was also the leg whose `build-dry`
+job completed last. The runs therefore cannot say which of the two moments decides the value. They do rule out, in
+both runs, that the value comes from the first or from the last leg of the matrix as written.
+
+**Deviations from the protocol (2).**
+
+- *D1, the reading of P2.* The installer step of the verification job has an earlier verifier release check the
+  verifier's own download, and that check prints a line of the same form as the check of a release binary. The
+  protocol's sentence for P2, "Every line in which the verifier names an artifact names X", did not foresee that
+  line. By its letter the line counts against P2 in both runs, and the analysis script as locked says so. We report
+  P2 for the lines outside the installer step, since P2 is about the binaries of the release, and we keep both
+  outputs: [`results/RESULTS.md`](results/RESULTS.md) and
+  [`results/locked-script/RESULTS.md`](results/locked-script/RESULTS.md). We noticed the line after run A and
+  before run B's tag.
+- *D2, the collection.* The script that reads the records stopped twice because GitHub answered one request for a
+  log with HTTP 503. A wrapper that repeats such a read collected the records in one pass.
+
+**The files of the releases.** In the release of `v0.2.0`, `sample-windows-arm64.exe` is the marker: 140 bytes of
+text, SHA-256 `03ecfc692bec41015f63d50cf79e947d91f36bd043be5905ce43d58f469923aa`. It is not a program, and its
+provenance file describes the binary that the run built, so its verification fails. Every other binary of both
+releases is the toy program and verifies against its provenance.
+
+**Where the records are.** The tool check is run [45236053013](https://github.com/tyche-institute/single-output-controlled-run/actions/runs/45236053013). The two result files in `results/`
+are as the analysis wrote them; they name scripts and folders of the article's replication package, which keeps the
+scripts and the records of every run (jobs, logs, releases and provenance files), because GitHub keeps logs for a
+limited time. The runs say nothing about any release of slsa-verifier: they are runs of a copy, with a toy program,
+in this repository.
 
 ## Licence and origin
 
