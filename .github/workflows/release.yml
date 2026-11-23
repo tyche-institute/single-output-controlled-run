@@ -3,7 +3,8 @@
 # Derived from .github/workflows/release.yml of slsa-framework/slsa-verifier at commit
 # ea584f4502babc6f60d9bc799dbbb13c1caa9ee6 (Apache License 2.0, Copyright SLSA Authors).
 # This file was changed. PROTOCOL.md, Section 3, lists every change. The three jobs below
-# (args, builder, verification) are, byte for byte, lines 22 to 90 of the source.
+# (args, builder, verification) are, byte for byte, lines 22 to 90 of the source, except that
+# this second form adds the job plant and names it in the needs of the job verification.
 name: Controlled release run
 
 on:
@@ -54,8 +55,106 @@ jobs:
       compile-builder: true
       evaluated-envs: "VERSION:${{needs.args.outputs.version}}"
 
-  verification:
+  # Not in the source: the planted fault of the second controlled run (PROTOCOL.md, Section 5).
+  # It reads the completion times of this run's jobs. It never reads the builder's output.
+  plant:
     needs: [builder]
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read # To read this run's jobs and their completion times.
+      contents: write # To replace one release asset.
+    steps:
+      - name: Replace the binary of the leg that completed first
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          export LC_ALL=C
+
+          jobs_url="repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/attempts/$GITHUB_RUN_ATTEMPT/jobs?per_page=100"
+          release_url="repos/$GITHUB_REPOSITORY/releases/tags/$GITHUB_REF_NAME"
+
+          # Every job of the six legs, with its completion time. The listing can lag by a few
+          # seconds, so wait until all 42 jobs are listed as completed.
+          try=0
+          while true; do
+            try=$((try + 1))
+            gh api --paginate "$jobs_url" \
+              --jq '.jobs[] | select(.name | startswith("builder-")) | [.name, .status, (.conclusion // "none"), (.completed_at // "none")] | @tsv' > jobs.tsv
+            total="$(grep -c . jobs.tsv || true)"
+            open="$(awk -F '\t' '$2 != "completed" || $4 == "none"' jobs.tsv | grep -c . || true)"
+            echo "PLANT listing try=$try jobs=$total not_completed=$open"
+            if [ "$total" -eq 42 ] && [ "$open" -eq 0 ]; then
+              break
+            fi
+            if [ "$try" -ge 24 ]; then
+              echo "PLANT stop: the job listing is not complete"
+              exit 1
+            fi
+            sleep 5
+          done
+
+          # One line per leg: its completion time (the latest among its jobs), its place in the
+          # matrix, and its name. Every job of every leg must have succeeded.
+          : > legs.tsv
+          place=0
+          for os in linux windows darwin; do
+            for arch in amd64 arm64; do
+              place=$((place + 1))
+              awk -F '\t' -v p="builder-$os-$arch / " 'index($1, p) == 1' jobs.tsv > leg.tsv
+              count="$(grep -c . leg.tsv || true)"
+              bad="$(awk -F '\t' '$3 != "success"' leg.tsv | grep -c . || true)"
+              if [ "$count" -ne 7 ] || [ "$bad" -ne 0 ]; then
+                echo "PLANT stop: leg $os-$arch has $count jobs, $bad of them without success"
+                exit 1
+              fi
+              done_at="$(cut -f 4 leg.tsv | sort | tail -n 1)"
+              printf '%s\t%s\t%s\t%s\n' "$done_at" "$place" "$os" "$arch" >> legs.tsv
+            done
+          done
+          sort -t "$(printf '\t')" -k 1,1 -k 2,2n legs.tsv > order.tsv
+          echo "PLANT legs by completion time (time, place in the matrix, os, arch):"
+          cat order.tsv
+
+          # The leg that completed first; among legs of the same second, the earlier in the matrix.
+          first_done="$(head -n 1 order.tsv | cut -f 1)"
+          os="$(head -n 1 order.tsv | cut -f 3)"
+          arch="$(head -n 1 order.tsv | cut -f 4)"
+          name="sample-$os-$arch"
+          if [ "$os" = "windows" ]; then
+            name="$name.exe"
+          fi
+
+          echo "PLANT release assets before (name, size, digest, updated):"
+          gh api "$release_url" --jq '.assets[] | [.name, .size, (.digest // "none"), .updated_at] | @tsv'
+
+          # The binary as the builder uploaded it.
+          mkdir built
+          gh -R "$GITHUB_REPOSITORY" release download "$GITHUB_REF_NAME" -p "$name" -D built
+          built_sha="$(sha256sum "built/$name" | cut -d ' ' -f 1)"
+
+          # The marker that takes its place. Its text is fixed, so its digest is known beforehand.
+          mkdir marker
+          printf '%s\n' \
+            'PLANTED FILE of a controlled release run. It replaces a release binary on purpose.' \
+            'It is not a program. See PROTOCOL.md in this repository.' > "marker/$name"
+          marker_sha="$(sha256sum "marker/$name" | cut -d ' ' -f 1)"
+
+          gh -R "$GITHUB_REPOSITORY" release upload "$GITHUB_REF_NAME" "marker/$name" --clobber
+
+          echo "PLANT release assets after (name, size, digest, updated):"
+          gh api "$release_url" --jq '.assets[] | [.name, .size, (.digest // "none"), .updated_at] | @tsv'
+
+          # Read the asset back and compare it with the marker.
+          mkdir back
+          gh -R "$GITHUB_REPOSITORY" release download "$GITHUB_REF_NAME" -p "$name" -D back
+          back_sha="$(sha256sum "back/$name" | cut -d ' ' -f 1)"
+          echo "PLANT leg=$os-$arch asset=$name first_done=$first_done built_sha256=$built_sha marker_sha256=$marker_sha read_back_sha256=$back_sha"
+          test "$marker_sha" = "$back_sha"
+          test "$marker_sha" != "$built_sha"
+
+  verification:
+    needs: [builder, plant]
     runs-on: ubuntu-latest
     if: github.event_name != 'schedule' && github.event_name != 'workflow_dispatch'
     permissions: read-all
