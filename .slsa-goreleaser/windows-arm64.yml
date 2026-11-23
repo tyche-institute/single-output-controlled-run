@@ -1,0 +1,20 @@
+# Adapted from .slsa-goreleaser/windows-arm64.yml of slsa-framework/slsa-verifier at commit
+# ea584f4502babc6f60d9bc799dbbb13c1caa9ee6 (Apache License 2.0, Copyright SLSA Authors).
+# Changed: the values of binary, dir and ldflags.
+# Used for pre-submit tests.
+version: 1
+env:
+  - GO111MODULE=on
+  - CGO_ENABLED=0
+
+flags:
+  - -trimpath
+  - -tags=netgo
+
+goos: windows
+goarch: arm64
+binary: sample-{{ .Os }}-{{ .Arch }}.exe
+dir: ./cmd/sample
+
+ldflags:
+  - "-X main.gitVersion={{ .Env.VERSION }}"

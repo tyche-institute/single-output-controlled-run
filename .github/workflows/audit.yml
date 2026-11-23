@@ -1,0 +1,63 @@
+# Not in the source: the audit of the controlled runs (PROTOCOL.md, Section 6).
+#
+# It applies the two commands of the verification job of release.yml, which come from
+# .github/workflows/release.yml of slsa-framework/slsa-verifier at commit
+# ea584f4502babc6f60d9bc799dbbb13c1caa9ee6 (Apache License 2.0, Copyright SLSA Authors),
+# to each of the six binaries of a release, and it collects all six results.
+# Run it on the tag of the release: gh workflow run audit.yml --ref <tag>
+name: Audit of all six binaries
+
+on:
+  workflow_dispatch:
+
+permissions: read-all
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    permissions: read-all
+    steps:
+      - name: Install the verifier
+        uses: slsa-framework/slsa-verifier/actions/installer@3714a2a4684014deb874a0e737dffa0ee02dd647 # v2.6.0
+
+      - name: Download and verify each of the six binaries
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -uo pipefail
+          # The default shell of a run step stops at the first failing command.
+          # This loop must reach all six binaries, so that is switched off.
+          set +e
+
+          if [ "$GITHUB_REF_TYPE" != "tag" ]; then
+            echo "AUDIT stop: run this workflow on the tag of a release"
+            exit 2
+          fi
+
+          failed=0
+          for ARTIFACT in sample-linux-amd64 sample-linux-arm64 \
+                          sample-windows-amd64.exe sample-windows-arm64.exe \
+                          sample-darwin-amd64 sample-darwin-arm64; do
+            ATT_FILE_NAME="$ARTIFACT.intoto.jsonl"
+
+            if ! gh -R "$GITHUB_REPOSITORY" release download "$GITHUB_REF_NAME" -p $ARTIFACT ||
+               ! gh -R "$GITHUB_REPOSITORY" release download "$GITHUB_REF_NAME" -p "$ATT_FILE_NAME"; then
+              echo "AUDIT result $ARTIFACT NOT-DOWNLOADED"
+              failed=1
+              continue
+            fi
+            echo "AUDIT sha256 $ARTIFACT $(sha256sum "$ARTIFACT" | cut -d ' ' -f 1)"
+
+            echo "Verifying $ARTIFACT using $ATT_FILE_NAME"
+            if slsa-verifier verify-artifact --provenance-path "$ATT_FILE_NAME" \
+                                             --source-uri "github.com/$GITHUB_REPOSITORY" \
+                                             --source-tag "$GITHUB_REF_NAME" \
+                                             "$ARTIFACT"; then
+              echo "AUDIT result $ARTIFACT PASS"
+            else
+              echo "AUDIT result $ARTIFACT FAIL"
+              failed=1
+            fi
+          done
+
+          exit "$failed"

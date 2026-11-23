@@ -1,0 +1,17 @@
+Controlled release runs of a single-output release workflow
+Copyright 2026 Anton Sokolov / Tyche Institute, Tallinn, Estonia.
+
+This repository includes material derived from slsa-verifier
+(https://github.com/slsa-framework/slsa-verifier) at commit
+ea584f4502babc6f60d9bc799dbbb13c1caa9ee6, which is licensed under the
+Apache License, Version 2.0. Files of that project carry the notice
+"Copyright 2022 SLSA Authors".
+
+Derived files, each marked in its header:
+
+  .github/workflows/release.yml     from .github/workflows/release.yml
+  .github/workflows/audit.yml       the installer step and two commands of the same file
+  .github/workflows/toolcheck.yml   the installer step of the same file
+  .slsa-goreleaser/*.yml            from the files of the same names
+
+PROTOCOL.md, Section 3, lists every change.
