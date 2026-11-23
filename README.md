@@ -85,14 +85,14 @@ both runs, that the value comes from the first or from the last leg of the matri
 
 **Deviations from the protocol (2).**
 
-- *D1, the reading of P2.* The installer step of the verification job has an earlier verifier release check the
-  verifier's own download, and that check prints a line of the same form as the check of a release binary. The
+- *D1, the reading of P2.* In the installer step of the verification job, an earlier release of the verifier
+  checks the downloaded verifier, and prints a line of the same form as the check of a release binary. The
   protocol's sentence for P2, "Every line in which the verifier names an artifact names X", did not foresee that
   line. By its letter the line counts against P2 in both runs, and the analysis script as locked says so. We report
   P2 for the lines outside the installer step, since P2 is about the binaries of the release, and we keep both
   outputs: [`results/RESULTS.md`](results/RESULTS.md) and
-  [`results/locked-script/RESULTS.md`](results/locked-script/RESULTS.md). We noticed the line after run A and
-  before run B's tag.
+  [`results/locked-script/RESULTS.md`](results/locked-script/RESULTS.md). We wrote the changed reading after run A
+  had ended and before run B's verification job started.
 - *D2, the collection.* The script that reads the records stopped twice because GitHub answered one request for a
   log with HTTP 503. A wrapper that repeats such a read collected the records in one pass.
 
